@@ -221,7 +221,7 @@ wait_for_port_use "${tiny_port}"
 # Run the proxy
 proxy_port=$(free_port)
 echo "Starting proxy on ${proxy_port}"
-./proxy ${proxy_port}  &> /dev/null &
+./proxy ${proxy_port}  &
 proxy_pid=$!
 
 # Wait for the proxy to start in earnest
@@ -359,7 +359,7 @@ wait_for_port_use "${tiny_port}"
 # Run the proxy
 proxy_port=$(free_port)
 echo "Starting proxy on port ${proxy_port}"
-./proxy ${proxy_port} &> /dev/null &
+./proxy ${proxy_port} &
 proxy_pid=$!
 
 # Wait for the proxy to start in earnest
@@ -384,7 +384,7 @@ download_proxy $NOPROXY_DIR ${FETCH_FILE} "http://localhost:${tiny_port}/${FETCH
 
 # See if the proxy fetch succeeded by comparing it with the original
 # file in the tiny directory
-diff -q ./tiny/${FETCH_FILE} ${NOPROXY_DIR}/${FETCH_FILE}  &> /dev/null
+diff ./tiny/${FETCH_FILE} ${NOPROXY_DIR}/${FETCH_FILE}  &>> /users/PAS0072/longpham2610/PROXYLAB/diff
 if [ $? -eq 0 ]; then
     cacheScore=${MAX_CACHE}
     echo "Success: Was able to fetch tiny/${FETCH_FILE} from the cache."

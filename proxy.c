@@ -2,6 +2,7 @@
 #include <string.h>
 #include "csapp.h"
 #include "sbuf.h"
+#include "cache.h"
 
 #define NTHREADS  4
 #define SBUFSIZE  16
@@ -12,9 +13,6 @@
 #define MAXFILENAME    2048
 #define MAXHEADER      64       /*max 64 headers in a request*/
 
-/* Recommended max cache and object sizes */
-#define MAX_CACHE_SIZE 1049000
-#define MAX_OBJECT_SIZE 102400
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -46,6 +44,9 @@ int main(int argc, char** argv)
     sbuf_init(&sbuf, SBUFSIZE);
     for (int i = 0; i < NTHREADS; i++)
         Pthread_create(&tid, NULL, thread, NULL);
+
+    /*initialize the cache*/
+    init_cache();
 
     while (1)
     {
@@ -84,6 +85,23 @@ void doit(int connfd)
         Close(connfd);
         return;
     }
+
+    printf("Finding the object in cache...\n");
+
+    /*do a cache read. if successful -> return*/
+    char object_id [MAXHOSTLEN + MAXPORTLEN + MAXFILENAME + 1] = "";
+    strcat(object_id, host);
+    strcat(object_id, ":");
+    strcat(object_id, port);
+    strcat(object_id, filename);
+    printf("objectid: %s\n", object_id);
+    if(cache_read(object_id, connfd))
+    {
+        printf("Found object in cache, sent to client\n");
+        return;
+    }
+
+    printf("Not found in cache, making request to server...\n");
     
     /*establish proxy -> server connection*/
     int clientfd;
@@ -130,13 +148,26 @@ void doit(int connfd)
     Rio_writen(clientfd, forward, strlen(forward)); 
     
     /*receive response from server*/
-    char backward [MAXLINE] = {'\0'};
+    char* backward = Calloc(MAXLINE, sizeof(char));       /*this will need to be heap memory with cache*/
     int n;
+
+    char* cache_write_buf = Calloc(MAX_OBJECT_SIZE, sizeof(char));
+    int total_read = 0;
+    
     while((n = Rio_readlineb(&rio, backward, MAXLINE)) > 0)     /*BUG: only write back n characters read instead of MAXLINE*/ 
     {
         /*backward to client: write to connfd*/
         Rio_writen(connfd, backward, n);
+
+        /*only count cached web objects, not metadata*/
+        strcat(cache_write_buf, backward);
+        total_read += n;
     }
+
+    /*write to the cache if object size does not exceed MAX_OBJECT_SIZE*/
+    if (total_read < MAX_OBJECT_SIZE)   
+        cache_write(cache_write_buf, total_read, object_id);
+
 }
 
 int parse(int connfd, char* host, char* port, char* filename, char request_headers [] [MAXLINE])
