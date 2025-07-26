@@ -13,7 +13,8 @@
 typedef struct object_dat
 {
     char* data;      /*points to heap memory containing web object data*/
-    int size;          /*size of object*/
+    int size;          /*size of metadata + content*/
+    int actual_size;  /*size of content*/
     char object_id [MAX_OBJECTID_LEN];  /*id the object by host+filename*/
     struct object_dat* prev;
     struct object_dat* next;
@@ -27,8 +28,9 @@ data on there.*/
 
 extern void init_cache();
 extern int cache_read(char* object_id, int connfd);
-extern void cache_write(char* object, int size, char* object_id);
+extern void cache_write(char* object, int size, int actual_size, char* object_id);
 extern void evict();
 extern int cacheFull();
+extern void record_cache_used(int size);
 
 #endif

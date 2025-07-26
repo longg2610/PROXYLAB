@@ -27,7 +27,8 @@ int cache_read(char* object_id, int connfd)
         int length = strlen(object_id) > strlen(p->object_id) ? strlen(object_id) : strlen(p->object_id);
         if(!strncmp(object_id, p->object_id, length)) /*found in cache*/
         {
-            printf("ID of object found in cache is: %s, with size of %d, and contain data:\n\n%s\n", p->object_id, p->size, p->data);
+            printf("ID of object found in cache is: %s, with size of %d, actual size of %d, and contain data:\n\n%s. Length check: %ld\n", 
+                p->object_id, p->size, p->actual_size, p->data, strlen(p->data));
             Rio_writen(connfd, p->data, p->size);   /*send back to client*/
 
             /*relocate to head*/
@@ -45,17 +46,18 @@ int cache_read(char* object_id, int connfd)
     return 0;
 }
 
-void cache_write(char* object, int size, char* object_id)
+void cache_write(char* object, int size, int actual_size, char* object_id)
 {
-    while(cacheFull(size))
+    while(cacheFull(actual_size))
         evict();
 
     object_dat* new_object = Malloc(sizeof(struct object_dat));
     new_object->data = object;              /*find a way to malloc here instead of in doit ?*/
     new_object->size = size;
-    strcpy(new_object->object_id, object_id);
+    new_object->actual_size = actual_size;
+    cache_used += actual_size;
 
-    cache_used += size;
+    strcpy(new_object->object_id, object_id);
 
     printf("Wrote object with id %s into cache\n", new_object->object_id);
 
@@ -78,7 +80,7 @@ void evict()
 {
     printf("EVICTING...\n");
     object_dat* p = tail->prev;
-    cache_used -= p->size;
+    cache_used -= p->actual_size;
     Free(p->data);
     p->prev->next = tail;
     tail->prev = p->prev;
@@ -89,3 +91,4 @@ int cacheFull(int size)
 {
     return ((cache_used + size) > MAX_CACHE_SIZE);
 }
+

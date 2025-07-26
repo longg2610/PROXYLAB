@@ -35,7 +35,9 @@ BASIC_LIST="home.html
 # List of text files for the cache test
 CACHE_LIST="tiny.c
             home.html
-            csapp.c"
+            csapp.c
+            godzilla.jpg
+            csapp.o"
 
 # The file we will fetch for various tests
 FETCH_FILE="home.html"
@@ -391,6 +393,52 @@ if [ $? -eq 0 ]; then
 else
     cacheScore=0
     echo "Failure: Was not able to fetch tiny/${FETCH_FILE} from the proxy cache."
+fi
+
+# test LRU
+# LRUTEST="csapp.c"
+# echo "Fetching a cached copy of ./tiny/${LRUTEST} into ${NOPROXY_DIR}"
+# download_proxy $NOPROXY_DIR ${LRUTEST} "http://localhost:${tiny_port}/${LRUTEST}" "http://localhost:${proxy_port}"
+
+# See if the proxy fetch succeeded by comparing it with the original
+# file in the tiny directory
+# diff ./tiny/${LRUTEST} ${NOPROXY_DIR}/${LRUTEST}  &>> /users/PAS0072/longpham2610/PROXYLAB/diff
+# if [ $? -eq 0 ]; then
+#     cacheScore=${MAX_CACHE}
+#     echo "Success: Was able to fetch tiny/${LRUTEST} from the cache."
+# else
+#     cacheScore=0
+#     echo "Failure: Was not able to fetch tiny/${LRUTEST} from the proxy cache."
+# fi
+
+# LRUTEST2="tiny.c"
+# echo "Fetching a cached copy of ./tiny/${LRUTEST2} into ${NOPROXY_DIR}"
+# download_proxy $NOPROXY_DIR ${LRUTEST2} "http://localhost:${tiny_port}/${LRUTEST2}" "http://localhost:${proxy_port}"
+
+# # See if the proxy fetch succeeded by comparing it with the original
+# # file in the tiny directory
+# diff ./tiny/${LRUTEST2} ${NOPROXY_DIR}/${LRUTEST2}  &>> /users/PAS0072/longpham2610/PROXYLAB/diff
+# if [ $? -eq 0 ]; then
+#     cacheScore=${MAX_CACHE}
+#     echo "Success: Was able to fetch tiny/${LRUTEST2} from the cache."
+# else
+#     cacheScore=0
+#     echo "Failure: Was not able to fetch tiny/${LRUTEST2} from the proxy cache."
+# fi
+
+LRUTEST3="godzilla.jpg"
+echo "Fetching a cached copy of ./tiny/${LRUTEST3} into ${NOPROXY_DIR}"
+download_proxy $NOPROXY_DIR ${LRUTEST3} "http://localhost:${tiny_port}/${LRUTEST3}" "http://localhost:${proxy_port}"
+
+# See if the proxy fetch succeeded by comparing it with the original
+# file in the tiny directory
+diff ./tiny/${LRUTEST3} ${NOPROXY_DIR}/${LRUTEST3}  &>> /users/PAS0072/longpham2610/PROXYLAB/diff
+if [ $? -eq 0 ]; then
+    cacheScore=${MAX_CACHE}
+    echo "Success: Was able to fetch tiny/${LRUTEST3} from the cache."
+else
+    cacheScore=0
+    echo "Failure: Was not able to fetch tiny/${LRUTEST3} from the proxy cache."
 fi
 
 # Kill the proxy

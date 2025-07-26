@@ -149,24 +149,37 @@ void doit(int connfd)
     
     /*receive response from server*/
     char* backward = Calloc(MAXLINE, sizeof(char));       /*this will need to be heap memory with cache*/
-    int n;
+    int n = 0;
 
-    char* cache_write_buf = Calloc(MAX_OBJECT_SIZE, sizeof(char));
-    int total_read = 0;
+    char* cache_write_buf = Calloc(MAX_OBJECT_SIZE, sizeof(int));
+    int size = 0; /*metadata+content*/
+    int actual_size = 0;    /*content*/
     
+    /*read metadata*/
     while((n = Rio_readlineb(&rio, backward, MAXLINE)) > 0)     /*BUG: only write back n characters read instead of MAXLINE*/ 
     {
         /*backward to client: write to connfd*/
         Rio_writen(connfd, backward, n);
+        strncat(cache_write_buf, backward, n);
+        size += n;
+        if(!strcmp(backward, "\r\n"))
+            break;
+    }
+    printf("Done reading metadata\n");
 
-        /*only count cached web objects, not metadata*/
-        strcat(cache_write_buf, backward);
-        total_read += n;
+    /*only count cached web objects, not metadata*/
+    while((n = Rio_readlineb(&rio, backward, MAXLINE)) > 0)
+    {
+        /*backward to client: write to connfd*/
+        Rio_writen(connfd, backward, n);
+        strncat(cache_write_buf, backward, n);
+        size += n;
+        actual_size += n;
     }
 
     /*write to the cache if object size does not exceed MAX_OBJECT_SIZE*/
-    if (total_read < MAX_OBJECT_SIZE)   
-        cache_write(cache_write_buf, total_read, object_id);
+    if (actual_size < MAX_OBJECT_SIZE)   
+        cache_write(cache_write_buf, size, actual_size, object_id);
 
 }
 
