@@ -151,16 +151,19 @@ void doit(int connfd)
     char* backward = Calloc(MAXLINE, sizeof(char));       /*this will need to be heap memory with cache*/
     int n = 0;
 
-    char* cache_write_buf = Calloc(MAX_OBJECT_SIZE, sizeof(int));
+    char* cache_write_buf = Calloc(MAX_OBJECT_SIZE, sizeof(char));
     int size = 0; /*metadata+content*/
     int actual_size = 0;    /*content*/
     
+    /*to use memcpy, which works with binary data*/
+    int offset = 0;
     /*read metadata*/
     while((n = Rio_readlineb(&rio, backward, MAXLINE)) > 0)     /*BUG: only write back n characters read instead of MAXLINE*/ 
     {
         /*backward to client: write to connfd*/
         Rio_writen(connfd, backward, n);
-        strncat(cache_write_buf, backward, n);
+        memcpy(cache_write_buf + offset, backward, n);
+        offset += n;
         size += n;
         if(!strcmp(backward, "\r\n"))
             break;
@@ -172,7 +175,8 @@ void doit(int connfd)
     {
         /*backward to client: write to connfd*/
         Rio_writen(connfd, backward, n);
-        strncat(cache_write_buf, backward, n);
+        memcpy(cache_write_buf + offset, backward, n);
+        offset += n;
         size += n;
         actual_size += n;
     }
