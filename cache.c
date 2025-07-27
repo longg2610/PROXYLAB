@@ -1,10 +1,14 @@
 #include "cache.h"
 
+sem_t mutex;       /*protects cache access*/
+
 object_dat* head = NULL;
 object_dat* tail = NULL;
 int cache_used = 0;
 void init_cache()
 {
+    Sem_init(&mutex, 0, 1);
+
     /*head and tail points to the SENTINEL nodes*/
     head = Malloc(sizeof(struct object_dat));
     tail = Malloc(sizeof(struct object_dat));
@@ -20,6 +24,8 @@ void init_cache()
 
 int cache_read(char* object_id, int connfd)
 {
+    P(&mutex);
+
     object_dat* p = head->next;
     while(p->size != 0)
     {
@@ -27,8 +33,8 @@ int cache_read(char* object_id, int connfd)
         int length = strlen(object_id) > strlen(p->object_id) ? strlen(object_id) : strlen(p->object_id);
         if(!strncmp(object_id, p->object_id, length)) /*found in cache*/
         {
-            printf("ID of object found in cache is: %s, with size of %d, actual size of %d, and contain data:\n\n%s. Length check: %ld\n", 
-                p->object_id, p->size, p->actual_size, p->data, strlen(p->data));
+            /*printf("ID of object found in cache is: %s, with size of %d, actual size of %d, and contain data:\n\n%s. Length check: %ld\n", 
+                p->object_id, p->size, p->actual_size, p->data, strlen(p->data));*/
             Rio_writen(connfd, p->data, p->size);   /*send back to client*/
 
             /*relocate to head*/
@@ -39,15 +45,22 @@ int cache_read(char* object_id, int connfd)
             p->next = head->next;
             p->next->prev = p;
             p->prev->next = p;
+
+            V(&mutex);
             return 1;
         }
         p = p->next;
     }
+
+    V(&mutex);
+
     return 0;
 }
 
 void cache_write(char* object, int size, int actual_size, char* object_id)
 {
+    P(&mutex);
+
     while(cacheFull(actual_size))
         evict();
 
@@ -74,6 +87,8 @@ void cache_write(char* object, int size, int actual_size, char* object_id)
         p = p->next;
     }
     printf("\n");
+
+    V(&mutex);
 }
 
 void evict()
