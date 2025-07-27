@@ -1,13 +1,26 @@
 #include "cache.h"
 
 sem_t mutex;       /*protects cache access*/
+object_dat* head;
+object_dat* tail;
+int cache_used;
 
-object_dat* head = NULL;
-object_dat* tail = NULL;
-int cache_used = 0;
+void print_cache()
+{
+    printf("Cache now contains the following objects: ");
+    object_dat* p = head->next;
+    while(p->size != 0)
+    {
+        printf("%s -> ", p->object_id);
+        p = p->next;
+    }
+    printf("\n");
+}
+
 void init_cache()
 {
     Sem_init(&mutex, 0, 1);
+    cache_used = 0;
 
     /*head and tail points to the SENTINEL nodes*/
     head = Malloc(sizeof(struct object_dat));
@@ -30,17 +43,17 @@ int cache_read(char* object_id, int connfd)
     while(p->size != 0)
     {
         printf("p->objectid: %s\n", p->object_id);
-        int length = strlen(object_id) > strlen(p->object_id) ? strlen(object_id) : strlen(p->object_id);
-        if(!strncmp(object_id, p->object_id, length)) /*found in cache*/
+        if(!strcmp(object_id, p->object_id)) /*found in cache*/
         {
             /*printf("ID of object found in cache is: %s, with size of %d, actual size of %d, and contain data:\n\n%s. Length check: %ld\n", 
                 p->object_id, p->size, p->actual_size, p->data, strlen(p->data));*/
             Rio_writen(connfd, p->data, p->size);   /*send back to client*/
 
-            /*relocate to head*/
+            /*splice*/
             p->prev->next = p->next;
             p->next->prev = p->prev;
-
+            
+            /*relocate to head*/
             p->prev = head;
             p->next = head->next;
             p->next->prev = p;
@@ -53,7 +66,6 @@ int cache_read(char* object_id, int connfd)
     }
 
     V(&mutex);
-
     return 0;
 }
 
@@ -65,28 +77,20 @@ void cache_write(char* object, int size, int actual_size, char* object_id)
         evict();
 
     object_dat* new_object = Malloc(sizeof(struct object_dat));
-    new_object->data = object;              /*find a way to malloc here instead of in doit ?*/
+    new_object->data = object;             
     new_object->size = size;
     new_object->actual_size = actual_size;
-    cache_used += actual_size;
-
     strcpy(new_object->object_id, object_id);
+
+    cache_used += actual_size;
 
     printf("Wrote object with id %s into cache\n", new_object->object_id);
 
+    /*put to head of queue*/
     new_object->prev = head;
     new_object->next = head->next;
     new_object->next->prev = new_object;
     new_object->prev->next = new_object;
-
-    printf("Cache now contains the following objects: ");
-    object_dat* p = head->next;
-    while(p->size != 0)
-    {
-        printf("%s -> ", p->object_id);
-        p = p->next;
-    }
-    printf("\n");
 
     V(&mutex);
 }

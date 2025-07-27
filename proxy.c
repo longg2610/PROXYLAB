@@ -13,6 +13,11 @@
 #define MAXFILENAME    2048
 #define MAXHEADER      64       /*max 64 headers in a request*/
 
+/* Maximum length of fields in an HTTP request line*/
+#define MAXMETHODLEN      16
+#define MAXURILEN         2048
+#define MAXVERSIONLEN     16
+#define MAXPROTOCOLLEN    16     
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
@@ -40,7 +45,7 @@ int main(int argc, char** argv)
     listenfd = Open_listenfd(argv[1]);  /*port of proxy, specified on command line*/
 
     /*set up shared buffer and initialize threads*/
-    pthread_t tid;  /*does not store tid so need not be an array of tid's*/
+    pthread_t tid;      /*does not store tid so need not be an array of tid's*/
     sbuf_init(&sbuf, SBUFSIZE);
     for (int i = 0; i < NTHREADS; i++)
         Pthread_create(&tid, NULL, thread, NULL);
@@ -51,7 +56,6 @@ int main(int argc, char** argv)
     while (1)
     {
         clientlen = sizeof(struct sockaddr_storage);
-        /*printf("Waiting for request from client(s)...\n");*/
         connfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
         sbuf_insert(&sbuf, connfd);  
     }
@@ -104,12 +108,10 @@ void doit(int connfd)
     printf("Not found in cache, making request to server...\n");
     
     /*establish proxy -> server connection*/
-    int clientfd;
+    int clientfd = Open_clientfd(host, port);
     rio_t rio;
-    clientfd = Open_clientfd(host, port);
     Rio_readinitb(&rio, clientfd);      /*all reads through clientfd now go through rio*/
     
-
     /*make forwarded request to server*/
     char forward [MAXLINE] = {'\0'};
 
@@ -124,7 +126,6 @@ void doit(int connfd)
     strcat(forward, ":");
     strcat(forward, port);
     strcat(forward, "\r\n");
-
     /*third line: User-Agent header*/
     strcat(forward, user_agent_hdr);
     /*fourth line: Connection header*/
@@ -133,14 +134,14 @@ void doit(int connfd)
     strcat(forward, "Proxy-Connection: close\r\n");
 
     /*other headers*/
-    int h = 0;
-    while(request_headers[h][0] != '\0')
+    int i = 0;
+    while(request_headers[i][0] != '\0')
     {
-        if(strncmp(request_headers[h], "Host:", 5) &&
-            strncmp(request_headers[h], "Connection:", 11) && 
-            strncmp(request_headers[h], "Proxy-Connection:", 17))
-            strcat(forward, request_headers[h]);
-        h += 1;
+        if(strncmp(request_headers[i], "Host:", 5) &&
+            strncmp(request_headers[i], "Connection:", 11) && 
+            strncmp(request_headers[i], "Proxy-Connection:", 17))
+            strcat(forward, request_headers[i]);
+        i += 1;
     }
     printf("Forwarded request is: \n%s", forward);
 
@@ -148,15 +149,16 @@ void doit(int connfd)
     Rio_writen(clientfd, forward, strlen(forward)); 
     
     /*receive response from server*/
-    char* backward = Calloc(MAXLINE, sizeof(char));       /*this will need to be heap memory with cache*/
+    char* backward = Calloc(MAXLINE, sizeof(char));    
     int n = 0;
 
     char* cache_write_buf = Calloc(MAX_OBJECT_SIZE, sizeof(char));
-    int size = 0; /*metadata+content*/
+    int size = 0;           /*metadata + content*/
     int actual_size = 0;    /*content*/
     
     /*to use memcpy, which works with binary data*/
     int offset = 0;
+
     /*read metadata*/
     while((n = Rio_readlineb(&rio, backward, MAXLINE)) > 0)     /*BUG: only write back n characters read instead of MAXLINE*/ 
     {
@@ -195,16 +197,16 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
     Rio_readinitb(&rio, connfd);
     Rio_readlineb(&rio, buf, MAXLINE);  /*read request from client (in connfd) to request buffer*/
 
-    char method [MAXLINE];
-    char protocol [MAXLINE];
-    char URI [MAXLINE];
-    char version [MAXLINE];
+    char method [MAXMETHODLEN];
+    char protocol [MAXPROTOCOLLEN];
+    char URI [MAXURILEN];
+    char version [MAXVERSIONLEN];
 
     sscanf(buf, "%s %s %s", method, URI, version);
 
     if (strcmp (method, "GET") != 0) 
     {
-        /*printf("Not a GET request\n");*/
+        /*printf("Only GET requests are implemented\n");*/
         return 0;
     }
 
@@ -214,14 +216,11 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
 
     while(j < 7)
     {
-        protocol[j] = URI[i];
-        i += 1;
-        j += 1;
+        protocol[j++] = URI[i++];
     }
     if(strcmp(protocol, "http://") != 0)
     {
-        /*printf("%s\n", protocol);
-        printf("Not an HTTP request\n");*/
+        /*printf("Not an HTTP request\n");*/
         return 0;
     }
 
@@ -230,9 +229,7 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
     j = 0;
     while(URI[i] != '/' && URI[i] != ':')
     {
-        host[j] = URI[i];
-        i += 1;
-        j += 1;
+        host[j++] = URI[i++];
     }
     
     /*printf("Done parsing Host: %s\n", host);*/
@@ -241,12 +238,10 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
     j = 0;
     if(URI[i] == ':')
     {
-        i += 1;
+        i++;
         while(URI[i] != '/')
         {
-            port[j] = URI[i];
-            i += 1;
-            j += 1;
+            port[j++] = URI[i++];
         }
     }
     /*use default port: 80*/
@@ -258,25 +253,19 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
     j = 0;
     while(URI[i] != '\0')
     {
-        filename[j] = URI[i];
-        i += 1;
-        j += 1;
+        filename[j++] = URI[i++];
     }
 
     /*printf("Done parsing filename: %s \n", filename);*/
-
-    /*printf("Version: %s\n", version);*/
 
     j = 0;
     Rio_readlineb(&rio, request_headers[j], MAXLINE);
     while(strcmp(request_headers[j], "\r\n"))
     {
-        j += 1;
+        j++;
         Rio_readlineb(&rio, request_headers[j], MAXLINE);
     }
 
     /*printf("Done parsing request headers\n");*/
-
     return 1;
-    
 }
