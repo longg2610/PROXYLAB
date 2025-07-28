@@ -66,6 +66,7 @@ int cache_read(char* object_id, int connfd)
     }
 
     V(&mutex);
+    print_cache();
     return 0;
 }
 
@@ -84,7 +85,7 @@ void cache_write(char* object, int size, int actual_size, char* object_id)
 
     cache_used += actual_size;
 
-    printf("Wrote object with id %s into cache\n", new_object->object_id);
+    printf("Wrote object with id %s and size %d into cache\n", new_object->object_id, new_object->size);
 
     /*put to head of queue*/
     new_object->prev = head;
@@ -93,6 +94,7 @@ void cache_write(char* object, int size, int actual_size, char* object_id)
     new_object->prev->next = new_object;
 
     V(&mutex);
+    print_cache();
 }
 
 void evict()
