@@ -8,14 +8,14 @@
 #define SBUFSIZE  16
 
 /* Maximum length of HTTP request fields*/
-#define MAXHOSTLEN     64
+#define MAXHOSTLEN     128
 #define MAXPORTLEN     6
-#define MAXFILENAME    256
+#define MAXFILENAME    512
 #define MAXHEADERLEN   128
-#define MAXHEADER      16       /*max 16 headers in a request*/
+#define MAXHEADER      32       /*max 32 headers in a request*/
 
 /* Maximum length of fields in an HTTP request line*/
-#define MAXMETHODLEN      16
+#define MAXMETHODLEN      8
 #define MAXURILEN         512
 #define MAXVERSIONLEN     16
 #define MAXPROTOCOLLEN    16     
@@ -30,15 +30,14 @@ void doit(int connfd);
 int parse(int connfd, char* host, char* port, char* filename, char request_headers [] [MAXHEADERLEN]);
 void sigpipe_handler(int sig) 
 {
-    printf("SIGPIPE handled\n");
+    /*do nothing and return, the default handler will terminate the proxy*/
     return;
 }
 
 
 int main(int argc, char** argv)
 {
-    printf("%s", user_agent_hdr);
-
+    printf("\nProxy launched\n");
     Signal(SIGPIPE, sigpipe_handler);   /*install SIGPIPE handler*/
 
     /*establish proxy - client connection*/
@@ -67,7 +66,6 @@ int main(int argc, char** argv)
         connfd = Accept(listenfd, (SA*) &clientaddr, &clientlen);
         sbuf_insert(&sbuf, connfd);  
     }
-
     return 0;
 }
 
@@ -80,46 +78,43 @@ void* thread(void* vargp)
     {
         connfd = sbuf_remove(&sbuf);
         doit(connfd);        
-        printf("Closing connfd\n");
         Close(connfd);
+        printf("Connection closed\n\n");
     }
 }
 
+/*
+1. Parse client's request
+2. Try to find object in the cache. If found, send it to client
+3. Object not found. Make forwarded request to server
+4. Connect to server and forward the request
+5. Receive response from server
+6. Write object from server to cache if applicable
+*/
 void doit(int connfd)
 {
     /*parse request from client. BUG: DO NOT REQUEST MAXLINE MEMORY, OVERFLOW THREAD'S STACK (KEEP THIS IN DOCUMENTATION)*/
     char host [MAXHOSTLEN] = {'\0'};
     char port [MAXPORTLEN] = {'\0'};
-    char filename [MAXFILENAME] = {'\0'};  /*file name for GET requests (crazy how an uninitialized string had the shit out of me)*/
+    char filename [MAXFILENAME] = {'\0'};  /*file name for GET requests*/
     char request_headers [MAXHEADER] [MAXHEADERLEN] = {'\0'};
 
+    /*parse error, move on to next request*/
     if(!parse(connfd, host, port, filename, request_headers)) 
-    {
-        /*printf("Malformed HTTP request\n");*/
         return;
-    }
 
-    printf("Finding the object in cache...\n");
 
     /*do a cache read. if successful -> return*/
-    char object_id [MAXHOSTLEN + MAXPORTLEN + MAXFILENAME + 1] = "";
-    strcat(object_id, host);
-    strcat(object_id, ":");
-    strcat(object_id, port);
-    strcat(object_id, filename);
-    printf("objectid: %s\n", object_id);
+    char object_id [MAXHOSTLEN + MAXPORTLEN + MAXFILENAME + 1] = {'\0'};
+    sprintf(object_id, "%s:%s%s", host, port, filename);
     if(cache_read(object_id, connfd))
     {
         printf("Found object in cache, sent to client\n");
         return;
     }
 
-    printf("Not found in cache, making request to server...\n");
-    
-    /*establish proxy -> server connection*/
-    int clientfd = Open_clientfd(host, port);
-    rio_t rio;
-    Rio_readinitb(&rio, clientfd);      /*all reads through clientfd now go through rio*/
+    /*object not found in cache*/
+    printf("Making request to server...\n");
     
     /*make forwarded request to server*/
     char forward [MAXLINE] = {'\0'};
@@ -152,17 +147,16 @@ void doit(int connfd)
             strcat(forward, request_headers[i]);
         i += 1;
     }
-
-    for(int i = 0; i < MAXHEADER; i++)
-        memset(request_headers[i], '\0', MAXHEADERLEN); 
+    printf("Forwarded request is: \n===========================\n%s===========================\n", forward);
 
 
-    printf("Forwarded request is: \n%s", forward);
-
-    /*forward request to server: write the HTTP request to clientfd*/
-    Rio_writen(clientfd, forward, strlen(forward)); 
+    /*establish proxy -> server connection*/
+    int clientfd = Open_clientfd(host, port);
+    rio_t rio;
+    Rio_readinitb(&rio, clientfd);      /*all reads through clientfd now go through rio*/
+    Rio_writen(clientfd, forward, strlen(forward));     /*forward request to server: simply write the HTTP request to clientfd*/
     
-    printf("Receiving response from server...\n");
+
     /*receive response from server*/
     char* backward = Calloc(MAXLINE, sizeof(char));    
     int n = 0;
@@ -185,76 +179,72 @@ void doit(int connfd)
         if(!strcmp(backward, "\r\n"))
             break;
     }
-    printf("Done reading metadata\n");
+    printf("Received metadata from server\n");
 
-    /*only count cached web objects, not metadata*/
+    /*read web content, updating actual size*/
     while((n = Rio_readlineb(&rio, backward, MAXLINE)) > 0)
     {
         /*backward to client: write to connfd*/
         Rio_writen(connfd, backward, n);
-        memcpy(cache_write_buf + offset, backward, n);
-        offset += n;
+        if(offset + n < MAX_OBJECT_SIZE)  /*only add to cache_write_buf if does not exceed MAX_OBJECT_SIZE*/
+        {
+            memcpy(cache_write_buf + offset, backward, n);
+            offset += n;
+        }
         size += n;
         actual_size += n;
     }
+    printf("Received content from server\n");
 
     /*write to the cache if object size does not exceed MAX_OBJECT_SIZE*/
-    if (actual_size > 0 && actual_size < MAX_OBJECT_SIZE)   
+    if (actual_size > 0 && actual_size < MAX_OBJECT_SIZE)
+    {
+        printf("Writing object of size %d into cache\n", actual_size);
         cache_write(cache_write_buf, size, actual_size, object_id);
-
+    }   
+        
 }
 
 int parse(int connfd, char* host, char* port, char* filename, char request_headers [] [MAXHEADERLEN])
 {
-    char buf[MAXLINE];
+    char request_line[MAXLINE];
     rio_t rio;
 
-    
+    int n = 0;
     Rio_readinitb(&rio, connfd);
-    Rio_readlineb(&rio, buf, MAXLINE);  /*read request from client (in connfd) to request buffer*/
-    printf("buf: %s\n", buf);
+    while ((n = Rio_readlineb(&rio, request_line, MAXLINE)) == 0);  /*read request from client (in connfd) to request buffer*/
+    printf("Request line from client: %s\n", request_line);
 
     char method [MAXMETHODLEN] = "";
     char protocol [MAXPROTOCOLLEN] = "";
     char URI [MAXURILEN] = "";
     char version [MAXVERSIONLEN] = "";
 
-    sscanf(buf, "%s %s %s", method, URI, version);
-
+    sscanf(request_line, "%s %s %s", method, URI, version);
     if (strcmp (method, "GET") != 0) 
     {
-        printf("Note: Only GET requests are implemented\n");
-        printf("Request from client is: %s\n", method);
+        printf("501 %s Not Implemented\n", method);
+        return 0;
     }
 
-    printf("URI: %s\n", URI);
-
+    printf("URI from the request line: %s\n", URI);
     /*parse URI*/
     int i = 0;
     char* ptr = URI;
     if(strstr(ptr, "http://") == ptr)
     {
-        i = 7;
+        i = strlen("http://");
         strcat(protocol, "http://");
     }
     else if(strstr(ptr, "https://") == ptr)
     {
-        i = 8;
+        i = strlen("https://");
         strcat(protocol, "https://");
     }
     
-    printf("Protocol: %s\n", protocol);
-
-    /*printf("Done parsing protocol\n");*/
-
     int j = 0;
     while(URI[i] != '\0' && URI[i] != ':' && URI[i] != '/')
-    {
         host[j++] = URI[i++];
-    }
-    
-    printf("Done parsing Host: %s\n", host);
-
     
     /*optional port number specified*/
     if(URI[i] == ':')
@@ -262,18 +252,11 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
         i++;
         j = 0;
         while(URI[i] != '\0' && URI[i] != '/')
-        {
             port[j++] = URI[i++];
-        }
     }
     /*use default port: 80*/
     else
-    {
         strcat(port, "80");
-    }    
-
-    printf("Done parsing Port: %s \n", port);
-
 
     if(URI[i] == '\0')
         strcat(filename, "/");  /*filename unspecified, get root*/
@@ -281,23 +264,17 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
     {
         j = 0;
         while(URI[i] != '\0')
-        {
             filename[j++] = URI[i++];
-        }
     }
     
-    printf("Done parsing filename: %s \n", filename);
-
+    /*read request headers*/
     j = 0;
     Rio_readlineb(&rio, request_headers[j], MAXHEADERLEN);
-    printf("%s", request_headers[j]);
     while(strcmp(request_headers[j], "\r\n"))
     {
         j++;
         Rio_readlineb(&rio, request_headers[j], MAXHEADERLEN);
-        printf("%s", request_headers[j]);
     }
-    
-    printf("Done parsing %d request headers\n", j-1);
+    printf("Number of request headers: %d\n", j-1);
     return 1;
 }

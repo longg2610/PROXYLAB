@@ -15,6 +15,7 @@ void print_cache()
         p = p->next;
     }
     printf("\n");
+    printf("Size of cache is now %d, remaining: %d\n", cache_used, MAX_CACHE_SIZE - cache_used);
 }
 
 void init_cache()
@@ -42,11 +43,8 @@ int cache_read(char* object_id, int connfd)
     object_dat* p = head->next;
     while(p->size != 0)
     {
-        printf("p->objectid: %s\n", p->object_id);
         if(!strcmp(object_id, p->object_id)) /*found in cache*/
         {
-            /*printf("ID of object found in cache is: %s, with size of %d, actual size of %d, and contain data:\n\n%s. Length check: %ld\n", 
-                p->object_id, p->size, p->actual_size, p->data, strlen(p->data));*/
             Rio_writen(connfd, p->data, p->size);   /*send back to client*/
 
             /*splice*/
@@ -66,7 +64,6 @@ int cache_read(char* object_id, int connfd)
     }
 
     V(&mutex);
-    print_cache();
     return 0;
 }
 
@@ -85,8 +82,6 @@ void cache_write(char* object, int size, int actual_size, char* object_id)
 
     cache_used += actual_size;
 
-    printf("Wrote object with id %s and size %d into cache\n", new_object->object_id, new_object->size);
-
     /*put to head of queue*/
     new_object->prev = head;
     new_object->next = head->next;
@@ -94,7 +89,6 @@ void cache_write(char* object, int size, int actual_size, char* object_id)
     new_object->prev->next = new_object;
 
     V(&mutex);
-    print_cache();
 }
 
 void evict()

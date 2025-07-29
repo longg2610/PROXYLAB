@@ -31,8 +31,10 @@
 /* $begin unixerror */
 void unix_error(char *msg) /* Unix-style error */
 {
-    fprintf(stderr, "%s: %s\n", msg, strerror(errno));
-    exit(0);
+    /*only prints out errors that are not Broken pipe since it occurs frequently*/
+    if(strcmp(strerror(errno), "Broken pipe"))
+        fprintf(stderr, "%s: %s\n", msg, strerror(errno));
+    /*exit(0);*/        /*commented out since proxy not supposed to terminate*/
 }
 /* $end unixerror */
 
@@ -45,7 +47,7 @@ void posix_error(int code, char *msg) /* Posix-style error */
 void gai_error(int code, char *msg) /* Getaddrinfo-style error */
 {
     fprintf(stderr, "%s: %s\n", msg, gai_strerror(code));
-    exit(0);
+    /*exit(0);*/       /*commented out since proxy not supposed to terminate*/
 }
 
 void app_error(char *msg) /* Application error */
