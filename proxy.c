@@ -82,11 +82,10 @@ void* thread(void* vargp)
 {
     Signal(SIGPIPE, sigpipe_handler);   /*install SIGPIPE handler*/
     Pthread_detach(Pthread_self());     /*run in detached mode -> no need for joining*/
-    int connfd;
     while(1)
     {
         /*take one connfd from work pool, service, and close connection*/
-        connfd = sbuf_remove(&sbuf);
+        int connfd = sbuf_remove(&sbuf);
         doit(connfd);        
         Close(connfd);
         printf("Connection closed\n\n");
@@ -230,9 +229,8 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
 
 
     /*read request line from client*/
-    char request_line[MAXLINE];
-    int n = 0;
-    while ((n = Rio_readlineb(&rio, request_line, MAXLINE)) == 0);  /*read request from client (connfd) to request line buffer*/
+    char request_line[MAXLINE] = "";
+    Rio_readlineb(&rio, request_line, MAXLINE);         /*read request from client (connfd) to request line buffer*/
     printf("Request line from client: %s\n", request_line);
 
 
