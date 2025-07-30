@@ -31,7 +31,7 @@
 /* $begin unixerror */
 void unix_error(char *msg) /* Unix-style error */
 {
-    /*only prints out errors that are not Broken pipe since it occurs frequently*/
+    /*only prints out errors that are not "Broken pipe" since it occurs frequently*/
     if(strcmp(strerror(errno), "Broken pipe"))
         fprintf(stderr, "%s: %s\n", msg, strerror(errno));
     /*exit(0);*/        /*commented out since proxy not supposed to terminate*/
