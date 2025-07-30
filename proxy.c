@@ -40,7 +40,7 @@ int main(int argc, char** argv)
     printf("\nProxy launched\n");
     Signal(SIGPIPE, sigpipe_handler);   /*install SIGPIPE handler*/
 
-    /*establish proxy - client connection*/
+    /*1. Establish proxy - client connection*/
     int listenfd, connfd;
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
@@ -51,7 +51,7 @@ int main(int argc, char** argv)
     }
     listenfd = Open_listenfd(argv[1]);  /*listen on port of proxy, specified on command line*/
 
-    /*initialize shared buffer*/ 
+    /*2. Initialize shared buffer*/ 
     sbuf_init(&sbuf, SBUFSIZE);
 
     /*initialize threads*/
@@ -62,7 +62,7 @@ int main(int argc, char** argv)
     /*initialize cache*/
     init_cache();
 
-    /*infinite loop: accept a client request and add the connected descriptor to work pool*/
+    /*3. Infinite loop: accept a client request and add the connected descriptor to work pool*/
     while (1)   
     {
         clientlen = sizeof(struct sockaddr_storage);
@@ -105,7 +105,7 @@ Note: char arrays should not request too much memory, might overflow thread's st
 */
 void doit(int connfd)
 {
-    /*parse request from client*/
+    /*1. Parse request from client*/
     char host [MAXHOSTLEN] = {'\0'};
     char port [MAXPORTLEN] = {'\0'};
     char filename [MAXFILENAME] = {'\0'}; 
@@ -115,7 +115,7 @@ void doit(int connfd)
         return;
 
 
-    /*cache read. if successful -> send to client and move on*/
+    /*2. Cache read, if successful -> send to client and move on*/
     char object_id [MAXHOSTLEN + MAXPORTLEN + MAXFILENAME + 1] = {'\0'};    /*+1 for the colon in host:port*/
     sprintf(object_id, "%s:%s%s", host, port, filename);
     if(cache_read(object_id, connfd))
@@ -128,7 +128,7 @@ void doit(int connfd)
     /*web object not found in cache*/
     printf("Making request to server...\n");
     
-    /*construct forwarded request to server*/
+    /*3. Construct forwarded request to server*/
     char forward [MAXLINE] = {'\0'};
     /*first line: request line*/
     strcat(forward, "GET ");
@@ -160,14 +160,14 @@ void doit(int connfd)
     printf("Forwarded request is: \n===========================\n%s===========================\n", forward);
 
 
-    /*establish proxy -> server connection*/
+    /*4. Establish proxy -> server connection*/
     int clientfd = Open_clientfd(host, port);
     rio_t rio;
     Rio_readinitb(&rio, clientfd);                      /*all reads through clientfd now go through rio*/
     Rio_writen(clientfd, forward, strlen(forward));     /*forward request to server: simply write the HTTP request to clientfd*/
     
 
-    /*receive response from server*/
+    /*5. Receive response from server*/
     char* backward = Calloc(MAXLINE, sizeof(char));   /*buffer for server response*/  
     int n = 0;                                        /*count number of bytes read*/
 
@@ -208,7 +208,8 @@ void doit(int connfd)
     }
     printf("Received content from server\n");
 
-    /*write to cache if actual size does not exceed MAX_OBJECT_SIZE*/
+
+    /*6. Write to cache if actual size does not exceed MAX_OBJECT_SIZE*/
     if (actual_size > 0 && actual_size < MAX_OBJECT_SIZE)
     {
         printf("Writing object of size %d into cache\n", actual_size);
@@ -228,13 +229,13 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
     Rio_readinitb(&rio, connfd);        /*all reads through connfd now go through rio*/
 
 
-    /*read request line from client*/
+    /*1. Read request line from client*/
     char request_line[MAXLINE] = "";
     Rio_readlineb(&rio, request_line, MAXLINE);         /*read request from client (connfd) to request line buffer*/
     printf("Request line from client: %s\n", request_line);
 
 
-    /*parse the request line*/
+    /*2. Parse the request line*/
     char method [MAXMETHODLEN] = "";        /*GET, POST, CONNECT, etc.*/
     char URI [MAXURILEN] = "";
     char protocol [MAXPROTOCOLLEN] = "";    /*http://, https://, etc*/
@@ -291,7 +292,7 @@ int parse(int connfd, char* host, char* port, char* filename, char request_heade
     }
     
 
-    /*read request headers*/
+    /*3. Read request headers*/
     j = 0;
     Rio_readlineb(&rio, request_headers[j], MAXHEADERLEN);
     while(strcmp(request_headers[j], "\r\n"))
